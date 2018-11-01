@@ -14,8 +14,9 @@ type Number = Construct
 type Point = (Number, Number)
 type Segment = (Point, Point)
 type Orientation = (Number, Number)
+type Ray = (Point, Orientation)
 type Polygon = [Segment]
-type PolygonTraversal = Map.Map Point Point
+type PolygonTraversal = Map.Map Point Ray
 type Solution = (Polygon, Polygon)
 
 rotate :: [a] -> [a]
@@ -57,21 +58,23 @@ normalize :: Orientation -> Orientation
 normalize (x, y) = (x / m, y / m)
   where m = sqrt $ x ^ 2 + y ^ 2
 
+oCompare :: Orientation -> Orientation -> Ordering
+oCompare o1 o2 = if y1 >= 0
+                   then if y2 < 0
+                    then LT
+                    else x2 `compare` x1
+                   else if y2 >= 0
+                     then GT
+                     else x1 `compare` x2
+  where (x1, y1) = normalize o1
+        (x2, y2) = normalize o2
+
 (@==@) :: Orientation -> Orientation -> Bool
-o1 @==@ o2 = normalize o1 == normalize o2
+o1 @==@ o2 = o1 `oCompare` o2 == EQ
 infix 4 @==@
 
-translate :: Number -> Orientation -> Point -> Point
-translate d o p = d *. (normalize o) .+. p
-
-matchStep :: Orientation -- Path 1 current orientation
-             -> Segment -- Path 1 next segment
-             -> Orientation -- Path 2 current orientation
-             -> Point -- Path 2 current point
-             -> Point --  Path 2 next point
-matchStep o1 s1 o2 p2 = translate d o2' p2
-  where d = magnitude s1
-        o2' = o2 @+@ (orientation s1 @+@ oNegate o1)
+translate :: Number -> Ray -> Point
+translate d (p, o) = d *. (normalize o) .+. p
 
 addMidpoints :: Polygon -> Polygon
 addMidpoints ss = concat $ zipWith3 aux ss ss' (rotate ss')
@@ -80,81 +83,100 @@ addMidpoints ss = concat $ zipWith3 aux ss ss' (rotate ss')
                              then let m = 1/2 *. a .+. 1/2 *. b in [(a, m), (m, b)]
                              else [(a, b)]
 
-pairs :: Eq a => [a] -> [(a, a)]
-pairs xs = [(x1, x2) | x1 <- xs, x2 <- xs, x1 /= x2]
+pairs :: Ord a => [a] -> [(a, a)]
+pairs xs = [(x1, x2) | x1 <- xs, x2 <- xs, x1 < x2]
 
-intersection :: Segment -> Segment -> [Point]
+intersection :: Ray -> Segment -> Maybe Number
 -- https://stackoverflow.com/a/565282
-intersection (p, pPlusR) (q, qPlusS) =
+intersection (p, _r) (q, qPlusS) =
   let (vx, vy) `cross` (wx, wy) = vx * wy - vy * wx
       (vx, vy) `dot` (wx, wy) = vx * wx + vy * wy
-      r = pPlusR .-. p
+      r = normalize _r
       s = qPlusS .-. q
       rxs = r `cross` s
       t = (q .-. p) `cross` s / rxs
       u = (q .-. p) `cross` r / rxs
-      btwn01 x = 0 <= x && x <= 1
-      atT t' = p .+. t' *. r
   in if rxs == 0
        then if (q .-. p) `cross` r == 0
-         then
-           let t0 = (q .-. p) `dot` r / r `dot` r
-               t1 = t0 + s `dot` r / r `dot` r
-           in if btwn01 t0
-                then if btwn01 t1
-                  then [atT t0, atT t1]
-                  else [atT t0]
-                else if btwn01 t1
-                  then [atT t1]
-                  else []
-         else []
-       else if btwn01 t && btwn01 u
-         then [atT t]
-         else []
+         then let t0 = (q .-. p) `dot` r / r `dot` r
+                  t1 = t0 + s `dot` r / r `dot` r
+                  t = if s `dot` r < 0 then t0 `max` t1 else t0 `min` t1
+              in if 0 <= t then Just t else Nothing
+         else Nothing
+       else if 0 <= t && 0 <= u && u <= 1
+         then Just t
+         else Nothing
 
-offSegment :: Segment -> Point -> Bool
-offSegment s p = null $ intersection s (p, p)
+minBy :: Ord b => (a -> b) -> a -> a -> a
+minBy f x y = if f x <= f y then x else y
 
-trimToIntersection :: Polygon -> Segment -> Segment
-trimToIntersection p s = minimumBy (comparing magnitude)
-                         $ map (<$ s)
-                         $ concatMap (intersection s) p
+rayTrace :: Polygon -> Ray -> Maybe (Number, Segment) -- distance along ray, edge
+rayTrace pg (p, o) = uncons (mapMaybe aux pg) >>= Just . uncurry (foldr $ minBy fst)
+  where aux e = fmap (,e) $ mfilter (>0) $ intersection (p, o) e
+
+isClockwise :: Polygon -> Bool
+isClockwise p = (>0) $ sum $ map (\((x1, y1), (x2, y2)) -> (x2 - x1) * (y2 + y1)) p
 
 reversePolygon :: Polygon -> Polygon
 reversePolygon p = reverse $ map (\(a, b) -> (b, a)) p
 
 polygonTraversal :: Polygon -> PolygonTraversal
-polygonTraversal = Map.fromList
+polygonTraversal = Map.fromList . map (\s -> (fst s, (fst s, orientation s)))
 
 removeDegeneracy :: Polygon -> Polygon
 removeDegeneracy p = foldr aux [] p
-  where aux s      []          = [s]
-        aux (a, _) ((b, c):ss) = if offSegment (a, c) b
-                                   then (a,b):(b,c):ss
-                                   else (a,c):ss
+  where aux s  []      = if 0 < magnitude s then [s] else []
+        aux s1 (s2:ss) =
+          if 0 < magnitude s2 && not (orientation s1 @==@ orientation s2)
+            then s1:s2:ss
+            else (fst s1, snd s2):ss
 
-tryPath :: Polygon -> PolygonTraversal -> (Point, Point) -> Maybe Solution
--- initial, incomplete implementation; only follows border of polygon
-tryPath pg t (p1, p2) = do o1 <- initOrientation p1
-                           o2 <- initOrientation p2
-                           aux p1 o1 p2 o2 ([p1], [p2])
-  where initOrientation p = orientation . (p,) <$> Map.lookup p t
-        aux p1' o1' p2' o2' (path1, path2) =
-          if p1' == p2
-            then if p2' == p1
-              then Just (removeDegeneracy $ polygon path1, removeDegeneracy $ polygon path2)
-              else Nothing
-            else do p1'' <- Map.lookup p1' t
-                    p2'' <- Map.lookup p2' t
-                    let s1 = (p1', p1'')
-                        s2 = (p2', p2'')
-                    guard $ p2'' == matchStep o1' s1 o2' p2'
-                    aux p1'' (orientation s1) p2'' (orientation s2) (p1'':path1, p2'':path2)
+tryPath :: Polygon -> PolygonTraversal -> Bool -> (Point, Point) -> Maybe Solution
+tryPath pg t cw (p1, p2) =
+  do r1 <- Map.lookup p1 t
+     r2 <- Map.lookup p2 t
+     (path1, path2) <- aux ([], []) r1 r2
+     return (removeDegeneracy $ polygon path1, removeDegeneracy $ polygon path2)
+  where aux (path1, path2) r1@(p1', o1) r2@(p2', o2) =
+          if p1' == p2 || p2' == p1
+            then (p1':path1, p2':path2) <$ guard (p1' == p2 && p2' == p1)
+            else if not (null path1) && (p1' == p1 || p2' == p2)
+              then (path1, path2) <$ guard (p1' == p1 && p2' == p2)
+              else do
+                (d1, (_, v1)) <- rayTrace pg r1
+                (d2, (_, v2)) <- rayTrace pg r2
+                case d1 `compare` d2 of
+                  LT -> let p1'' = translate d1 r1
+                            p2'' = translate d1 r2
+                            t = turn o1 p1'' v1
+                            r1' = (p1'', o1 @+@ t)
+                            r2' = (p2'', o2 @+@ t)
+                        in aux (p1':path1, p2':path2) r1' r2'
+                  GT -> let p1'' = translate d2 r1
+                            p2'' = translate d2 r2
+                            t = turn o2 p2'' v2
+                            r1' = (p1'', o1 @+@ t)
+                            r2' = (p2'', o2 @+@ t)
+                        in aux (p1':path1, p2':path2) r1' r2'
+                  EQ -> let p1'' = translate d1 r1
+                            p2'' = translate d2 r2
+                            t1 = turn o1 p1'' v1
+                            t2 = turn o2 p2'' v2
+                            t = t1 `sharpest` t2
+                            r1' = (p1'', o1 @+@ t)
+                            r2' = (p2'', o2 @+@ t)
+                        in aux (p1':path1, p2':path2) r1' r2'
+                where
+                  turn o p p' = if p == p' then error $ show (p1':path1,p2':path2) else orientation (p, p') @+@ oNegate o
+                  o1' `sharpest` o2' =
+                    let f = if cw then oNegate . oReverse else oReverse
+                    in if f o1' `oCompare` f o2' == GT then o1' else o2'
 
 split :: Polygon -> Maybe Solution
 split _p = getFirst $ mconcat $ map First tries
-  where p = addMidpoints _p
+  where cw = isClockwise _p
+        p = addMidpoints _p
         p' = reversePolygon p
-        try1 = tryPath p (polygonTraversal p)
-        try2 = tryPath p' (polygonTraversal p')
+        try1 = tryPath p (polygonTraversal p) cw
+        try2 = tryPath p' (polygonTraversal p') (not cw)
         tries = [try1, try2] <*> pairs (map fst p)
