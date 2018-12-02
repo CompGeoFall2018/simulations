@@ -15,9 +15,9 @@ build-type:          Simple
 extra-source-files:  ChangeLog.md, README.md
 cabal-version:       >=1.10
 
-library
-  exposed-modules:     Eriksson
-  -- other-modules:
+executable eriksson
+  main-is:     Main.hs
+  other-modules:        Eriksson
   other-extensions:    TupleSections
   build-depends:       base >=4.11 && <4.12, containers >=0.5 && <0.6, constructible >=0.1 && <0.2
   -- hs-source-dirs:
