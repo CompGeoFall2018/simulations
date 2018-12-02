@@ -6,7 +6,6 @@ let
 
   # Jailbreak these packages
   doJailbreakPackages = [
-    "turtle"
   ];
 
   # Disable haddocks for these packages
@@ -84,8 +83,4 @@ stdenv.mkDerivation {
 in
   rec {
     simulations = pkgs.haskellPackages.simulations;
-    env = pkgs0.stdenv.mkDerivation {
-      name = "env";
-      buildInputs = with pkgs0; [ cabal-install ];
-    };
   }
