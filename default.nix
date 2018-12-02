@@ -17,8 +17,9 @@ let
     sha256 = "1x9zjpzijj5sx2hxdsdhm4fi5m22x9n2gp25wb71p1m8wfzqwrib";
     url = "https://github.com/NixOS/nixpkgs/archive/aed2dea55a9399c9513e65ff8248aff0205b5a3e.tar.gz";
   };
-  mkPkgs = opts: import <unstable> opts;
-  ghc = (mkPkgs {}).haskell.compiler.ghcjs84;
+  mkPkgs = opts: import pinnedPkgs opts;
+  pkgs0 = mkPkgs {};
+  ghc = pkgs0.haskell.compiler.ghcjs84;
   # ghc = (mkPkgs {}).ghc843;
 
   config = {
@@ -83,8 +84,8 @@ stdenv.mkDerivation {
 in
   rec {
     simulations = pkgs.haskellPackages.simulations;
-    env = pkgs.stdenv.mkDerivation {
+    env = pkgs0.stdenv.mkDerivation {
       name = "env";
-      buildInputs = with pkgs; [ cabal-install cabal2nix ];
+      buildInputs = with pkgs0; [ cabal-install ];
     };
   }
