@@ -17,7 +17,7 @@ type Orientation = (Number, Number)
 type Ray = (Point, Orientation)
 type Polygon = [Segment]
 type PolygonTraversal = Map.Map Point Ray
-type Solution = (Polygon, Polygon)
+type Solution = ([Point], [Point])
 
 rotate :: [a] -> [a]
 rotate []     = []
@@ -25,6 +25,9 @@ rotate (x:xs) = xs ++ [x]
 
 polygon :: [Point] -> Polygon
 polygon ps = zip ps $ rotate ps
+
+vertices :: Polygon -> [Point]
+vertices = map fst
 
 (.+.) :: Point -> Point -> Point
 (x1, y1) .+. (x2, y2) = (x1 + x2, y1 + y2)
@@ -135,10 +138,10 @@ tryPath :: Polygon -> PolygonTraversal -> Bool -> (Point, Point) -> Maybe Soluti
 tryPath pg t cw (p1, p2) =
   do r1 <- Map.lookup p1 t
      r2 <- Map.lookup p2 t
-     (path1, path2) <- aux ([], []) r1 r2
-     return (removeDegeneracy $ polygon path1, removeDegeneracy $ polygon path2)
-  where aux (path1, path2) r1@(p1', o1) r2@(p2', o2) =
-          if p1' == p2 || p2' == p1
+     (path1, path2) <- aux ([], []) False r1 r2
+     return (vertices $ removeDegeneracy $ polygon path1, vertices $ removeDegeneracy $ polygon path2)
+  where aux (path1, path2) hasLeftBorder r1@(p1', o1) r2@(p2', o2) =
+          if not hasLeftBorder && (p1' == p2 || p2' == p1)
             then (p1':path1, p2':path2) <$ guard (p1' == p2 && p2' == p1)
             else if not (null path1) && (p1' == p1 || p2' == p2)
               then (path1, path2) <$ guard (p1' == p1 && p2' == p2)
@@ -151,13 +154,13 @@ tryPath pg t cw (p1, p2) =
                             t = turn o1 p1'' v1
                             r1' = (p1'', o1 @+@ t)
                             r2' = (p2'', o2 @+@ t)
-                        in aux (p1':path1, p2':path2) r1' r2'
+                        in aux (p1':path1, p2':path2) (hasLeftBorder || not (t @==@ (1, 0))) r1' r2'
                   GT -> let p1'' = translate d2 r1
                             p2'' = translate d2 r2
                             t = turn o2 p2'' v2
                             r1' = (p1'', o1 @+@ t)
                             r2' = (p2'', o2 @+@ t)
-                        in aux (p1':path1, p2':path2) r1' r2'
+                        in aux (p1':path1, p2':path2) (hasLeftBorder || not (t @==@ (1, 0))) r1' r2'
                   EQ -> let p1'' = translate d1 r1
                             p2'' = translate d2 r2
                             t1 = turn o1 p1'' v1
@@ -165,18 +168,21 @@ tryPath pg t cw (p1, p2) =
                             t = t1 `sharpest` t2
                             r1' = (p1'', o1 @+@ t)
                             r2' = (p2'', o2 @+@ t)
-                        in aux (p1':path1, p2':path2) r1' r2'
+                        in aux (p1':path1, p2':path2) (hasLeftBorder || not (t1 @==@ t2)) r1' r2'
                 where
                   turn o p p' = if p == p' then error $ show (p1':path1,p2':path2) else orientation (p, p') @+@ oNegate o
                   o1' `sharpest` o2' =
                     let f = if cw then oNegate . oReverse else oReverse
                     in if f o1' `oCompare` f o2' == GT then o1' else o2'
 
-split :: Polygon -> Maybe Solution
-split _p = getFirst $ mconcat $ map First tries
-  where cw = isClockwise _p
+split :: [Point] -> Maybe Solution
+split ps = listToMaybe $ mapMaybe validate tries
+  where _p = polygon ps
+        cw = isClockwise _p
         p = addMidpoints _p
         p' = reversePolygon p
         try1 = tryPath p (polygonTraversal p) cw
         try2 = tryPath p' (polygonTraversal p') (not cw)
         tries = [try1, try2] <*> pairs (map fst p)
+        validate Nothing           = Nothing
+        validate (Just (ps1, ps2)) = (ps1, ps2) <$ guard (all (liftM2 (||) (flip elem ps1) (flip elem ps2)) ps)
