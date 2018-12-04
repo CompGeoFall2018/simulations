@@ -15,8 +15,8 @@ simplePoly :: Polygon
 simplePoly = polygon [(0, 0), (4, 0), (4, 3), (2, 3), (2, 1), (0, 1)]
 
 -- |convert a polygon to a list of pair of floating points, suitable for JS
-fixupPoly :: Polygon -> [(Double, Double)]
-fixupPoly = map ((\(x, y) -> (fromConstruct x, fromConstruct y)) . fst)
+fixupPoly :: [Point] -> [(Double, Double)]
+fixupPoly = map (\(x, y) -> (fromConstruct x, fromConstruct y))
 
 splitJS :: JSVal -> IO JSVal
 splitJS jsval = do
@@ -26,8 +26,7 @@ splitJS jsval = do
     Just (raw_pts :: [(Double, Double)]) <- fromJSVal jsval
     let pts :: [(Number, Number)]
         pts = map (\(x, y) -> (fromInteger $ round x, fromInteger $ round y)) raw_pts
-        thePolygon = polygon pts
-    toJSVal $ fmap (\(poly1, poly2) -> map fixupPoly [ poly1, poly2 ]) $ split thePolygon
+    toJSVal $ fmap (\(poly1, poly2) -> map fixupPoly [ poly1, poly2 ]) $ split pts
 
 foreign import javascript unsafe "splitPolygon = $1"
     js_set_splitPolygon :: JSVal -> IO ()
