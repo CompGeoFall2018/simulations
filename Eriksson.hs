@@ -185,4 +185,6 @@ split ps = listToMaybe $ mapMaybe validate tries
         try2 = tryPath p' (polygonTraversal p') (not cw)
         tries = [try1, try2] <*> pairs (map fst p)
         validate Nothing           = Nothing
-        validate (Just (ps1, ps2)) = (ps1, ps2) <$ guard (all (liftM2 (||) (flip elem ps1) (flip elem ps2)) ps)
+        validate (Just (ps1, ps2)) = (ps1, ps2) <$ guard ((all (liftM2 (||) (flip elem ps1) (flip elem ps2)) ps)
+                                                          && all (liftM2 (||) (flip elem ps) (flip elem ps2)) ps1
+                                                          && all (liftM2 (||) (flip elem ps) (flip elem ps1)) ps2)
