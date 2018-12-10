@@ -170,7 +170,7 @@ tryPath pg t cw (p1, p2) =
                             r2' = (p2'', o2 @+@ t)
                         in aux (p1':path1, p2':path2) (hasLeftBorder || not (t1 @==@ t2)) r1' r2'
                 where
-                  turn o p p' = if p == p' then error $ show (p1':path1,p2':path2) else orientation (p, p') @+@ oNegate o
+                  turn o p p' = if p == p' then (1,0) else orientation (p, p') @+@ oNegate o
                   o1' `sharpest` o2' =
                     let f = if cw then oNegate . oReverse else oReverse
                     in if f o1' `oCompare` f o2' == GT then o1' else o2'
